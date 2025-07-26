@@ -248,6 +248,7 @@ export async function createStoreSync({
     shareReplay(1),
   );
   const latestBlockNumber$ = latestBlock$.pipe(
+    filter((block) => block !== undefined),
     map((block) => block.number),
     tap((blockNumber) => {
       latestBlockNumber = blockNumber;
@@ -281,32 +282,32 @@ export async function createStoreSync({
       )
     : throwError(() => new Error("No preconfirmed logs WebSocket RPC URL provided"));
 
-  const storedIndexerLogs$ = indexerUrl
-    ? startBlock$.pipe(
-        mergeMap((startBlock) => {
-          const url = new URL(
-            `api/logs-live?${new URLSearchParams({
-              input: JSON.stringify({ chainId, address, filters }),
-              block_num: startBlock.toString(),
-              include_tx_hash: "true",
-            })}`,
-            indexerUrl,
-          );
-          return fromEventSource<string>(url);
-        }),
-        map((messageEvent) => {
-          const data = JSON.parse(messageEvent.data);
-          if (!isLogsApiResponse(data)) {
-            throw new Error("Received unexpected from indexer:" + messageEvent.data);
-          }
-          return toStorageAdapterBlock(data);
-        }),
-        concatMap(async (block) => {
-          await storageAdapter(block);
-          return block;
-        }),
-      )
-    : throwError(() => new Error("No indexer URL provided"));
+  // const storedIndexerLogs$ = indexerUrl
+  //   ? startBlock$.pipe(
+  //       mergeMap((startBlock) => {
+  //         const url = new URL(
+  //           `api/logs-live?${new URLSearchParams({
+  //             input: JSON.stringify({ chainId, address, filters }),
+  //             block_num: startBlock.toString(),
+  //             include_tx_hash: "true",
+  //           })}`,
+  //           indexerUrl,
+  //         );
+  //         return fromEventSource<string>(url);
+  //       }),
+  //       map((messageEvent) => {
+  //         const data = JSON.parse(messageEvent.data);
+  //         if (!isLogsApiResponse(data)) {
+  //           throw new Error("Received unexpected from indexer:" + messageEvent.data);
+  //         }
+  //         return toStorageAdapterBlock(data);
+  //       }),
+  //       concatMap(async (block) => {
+  //         await storageAdapter(block);
+  //         return block;
+  //       }),
+  //     )
+  //   : throwError(() => new Error("No indexer URL provided"));
 
   const storedEthRpcLogs$ = combineLatest([startBlock$, latestBlockNumber$]).pipe(
     map(([startBlock, endBlock]) => ({ startBlock, endBlock })),
@@ -329,11 +330,11 @@ export async function createStoreSync({
   );
 
   const storedBlock$ = storedPreconfirmedLogs$.pipe(
-    catchError((error) => {
-      debug("failed to stream logs from preconfirmed log RPC:", error.message);
-      debug("falling back to streaming logs from indexer");
-      return storedIndexerLogs$;
-    }),
+    // catchError((error) => {
+    //   debug("failed to stream logs from preconfirmed log RPC:", error.message);
+    //   debug("falling back to streaming logs from indexer");
+    //   return storedIndexerLogs$;
+    // }),
     catchError((error) => {
       debug("failed to stream logs from indexer:", error.message);
       debug("falling back to streaming logs from ETH RPC");
