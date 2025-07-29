@@ -35,15 +35,13 @@ import {
   switchMap,
   Subject,
   startWith,
+  EMPTY
 } from "rxjs";
 import { debug as parentDebug } from "./debug";
 import { SyncStep } from "./SyncStep";
 import { bigIntMax, chunk, isDefined, waitForIdle } from "@latticexyz/common/utils";
 import { getSnapshot } from "./getSnapshot";
-import { fromEventSource } from "./fromEventSource";
 import { fetchAndStoreLogs } from "./fetchAndStoreLogs";
-import { isLogsApiResponse } from "./indexer-client/isLogsApiResponse";
-import { toStorageAdapterBlock } from "./indexer-client/toStorageAdapterBlock";
 import { getAction } from "viem/utils";
 import { getChainId, getTransactionReceipt } from "viem/actions";
 import packageJson from "../package.json";
@@ -232,21 +230,36 @@ export async function createStoreSync({
     }),
   );
 
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 5000;
+  let retryLatestBlockCount = 0;
   let latestBlockNumber: bigint | null = null;
   const recreateLatestBlockStream$ = new Subject<void>();
   const latestBlock$ = recreateLatestBlockStream$.pipe(
     startWith(undefined),
     switchMap(() =>
       createBlockStream({ ...opts, blockTag: followBlockTag }).pipe(
-        catchError((error) => {
-          debug("error in latestBlock$, recreating");
-          recreateLatestBlockStream$.next();
-          return throwError(() => error);
+        tap(() => {
+          retryLatestBlockCount = 0; // Reset on success
         }),
-      ),
+        catchError((error) => {
+          retryLatestBlockCount++;
+
+          if (retryLatestBlockCount > MAX_RETRIES) {
+            debug(`latestBlock$ failed after ${MAX_RETRIES} retries`);
+            return throwError(() => error);
+          }
+
+          debug(`latestBlock$ error, retrying in ${RETRY_DELAY_MS}ms (attempt ${retryLatestBlockCount}/${MAX_RETRIES})`);
+          setTimeout(() => recreateLatestBlockStream$.next(), RETRY_DELAY_MS);
+
+          return EMPTY;
+        }),
+      )
     ),
     shareReplay(1),
   );
+
   const latestBlockNumber$ = latestBlock$.pipe(
     filter((block) => block !== undefined),
     map((block) => block.number),
@@ -282,33 +295,6 @@ export async function createStoreSync({
       )
     : throwError(() => new Error("No preconfirmed logs WebSocket RPC URL provided"));
 
-  // const storedIndexerLogs$ = indexerUrl
-  //   ? startBlock$.pipe(
-  //       mergeMap((startBlock) => {
-  //         const url = new URL(
-  //           `api/logs-live?${new URLSearchParams({
-  //             input: JSON.stringify({ chainId, address, filters }),
-  //             block_num: startBlock.toString(),
-  //             include_tx_hash: "true",
-  //           })}`,
-  //           indexerUrl,
-  //         );
-  //         return fromEventSource<string>(url);
-  //       }),
-  //       map((messageEvent) => {
-  //         const data = JSON.parse(messageEvent.data);
-  //         if (!isLogsApiResponse(data)) {
-  //           throw new Error("Received unexpected from indexer:" + messageEvent.data);
-  //         }
-  //         return toStorageAdapterBlock(data);
-  //       }),
-  //       concatMap(async (block) => {
-  //         await storageAdapter(block);
-  //         return block;
-  //       }),
-  //     )
-  //   : throwError(() => new Error("No indexer URL provided"));
-
   const storedEthRpcLogs$ = combineLatest([startBlock$, latestBlockNumber$]).pipe(
     map(([startBlock, endBlock]) => ({ startBlock, endBlock })),
     concatMap((range) => {
@@ -330,11 +316,6 @@ export async function createStoreSync({
   );
 
   const storedBlock$ = storedPreconfirmedLogs$.pipe(
-    // catchError((error) => {
-    //   debug("failed to stream logs from preconfirmed log RPC:", error.message);
-    //   debug("falling back to streaming logs from indexer");
-    //   return storedIndexerLogs$;
-    // }),
     catchError((error) => {
       debug("failed to stream logs from indexer:", error.message);
       debug("falling back to streaming logs from ETH RPC");
