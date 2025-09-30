@@ -2,16 +2,17 @@ import { Entity } from "@latticexyz/recs";
 import { Hex, decodeAbiParameters } from "viem";
 import { entityToHexKeyTuple } from "./entityToHexKeyTuple";
 import { KeySchema, SchemaToPrimitives } from "@latticexyz/protocol-parser/internal";
-import { LruMap } from "@latticexyz/common";
+import { LruMap } from "./LruMap";
 
-const caches = new Map<KeySchema, LruMap<Entity, SchemaToPrimitives<KeySchema>>>();
+const caches = new Map<string, LruMap<Entity, SchemaToPrimitives<KeySchema>>>();
 
 function getCache<keySchema extends KeySchema>(keySchema: keySchema): LruMap<Entity, SchemaToPrimitives<keySchema>> {
-  const cache = caches.get(keySchema);
+  const cacheKey = JSON.stringify(Object.keys(keySchema).sort());
+  const cache = caches.get(cacheKey);
   if (cache != null) return cache as never;
 
   const map = new LruMap<Entity, SchemaToPrimitives<keySchema>>(8096);
-  caches.set(keySchema, map);
+  caches.set(cacheKey, map);
   return map;
 }
 
