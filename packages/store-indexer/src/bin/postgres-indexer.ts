@@ -85,7 +85,7 @@ if (env.END_BLOCK != null) {
   storedBlockLogs$.subscribe(({ blockNumber }) => {
     if (blockNumber >= env.END_BLOCK!) {
       console.log(`Reached END_BLOCK ${blockNumber}, stopping...`);
-      process.exit(999);
+      process.exit(0);
     }
   });
 } else {
