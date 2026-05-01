@@ -1,6 +1,6 @@
 {
   "name": "@artwoooood/store-indexer",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "Minimal Typescript indexer for Store",
   "repository": {
     "type": "git",

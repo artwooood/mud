@@ -66,7 +66,18 @@ const { latestBlockNumber$, storedBlockLogs$ } = await createStoreSync({
   address: env.STORE_ADDRESS,
 });
 
-storedBlockLogs$.subscribe();
+if (env.END_BLOCK != null) {
+  console.log("END_BLOCK:", env.END_BLOCK);
+  storedBlockLogs$.subscribe(({ blockNumber }) => {
+    if (blockNumber >= env.END_BLOCK!) {
+      console.log(`Reached END_BLOCK ${blockNumber}, stopping...`);
+      process.exit(999);
+    }
+  });
+} else {
+  console.log("NO END_BLOCK");
+  storedBlockLogs$.subscribe();
+}
 
 let isCaughtUp = false;
 combineLatest([latestBlockNumber$, storedBlockLogs$])
